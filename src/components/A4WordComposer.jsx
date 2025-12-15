@@ -1,19 +1,21 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 
 // A4 size at 96 DPI
 const A4_WIDTH = 794;
 const A4_HEIGHT = 1123;
 
 // --- Helper Component: Draggable & Resizable Box ---
-function DraggableResizableBox({ x, y, width, height, onUpdate, children, disabled, hideBorder }) { // <-- Προσθήκη hideBorder
-  // ... (Implementation remains the same)
+function DraggableResizableBox({ x, y, width, height, onUpdate, children, disabled, hideBorder }) { 
+  
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const startPos = useRef({ x: 0, y: 0, initialX: 0, initialY: 0, initialW: 0, initialH: 0 });
 
+  // Logic for Dragging and Resizing (Remains mostly the same, sensitive to 'disabled' or 'hideBorder')
   useEffect(() => {
     const handleMouseMove = (e) => {
-      if (disabled) return;
+      if (disabled || hideBorder) return; // Cannot drag/resize if disabled or exporting
+      // ... (Movement logic)
       if (isDragging) {
         const dx = e.clientX - startPos.current.x;
         const dy = e.clientY - startPos.current.y;
@@ -48,7 +50,7 @@ function DraggableResizableBox({ x, y, width, height, onUpdate, children, disabl
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isResizing, disabled, onUpdate]);
+  }, [isDragging, isResizing, disabled, hideBorder, onUpdate]);
 
   const handleMouseDown = (e) => {
     if (disabled || hideBorder || e.target.closest('.resize-handle')) return;
@@ -63,6 +65,8 @@ function DraggableResizableBox({ x, y, width, height, onUpdate, children, disabl
     startPos.current = { x: e.clientX, y: e.clientY, initialX: x, initialY: y, initialW: width, initialH: height };
   };
 
+  const shouldHideBorders = disabled || hideBorder;
+
   return (
     <div
       style={{
@@ -71,9 +75,9 @@ function DraggableResizableBox({ x, y, width, height, onUpdate, children, disabl
         top: y,
         width,
         height,
-        // 🌟 ΔΙΟΡΘΩΣΗ: Κρύβουμε το border αν γίνεται export
-        border: (disabled || hideBorder) ? 'none' : '2px dashed #999',
-        cursor: (disabled || hideBorder) ? 'default' : 'move',
+        // 🌟 ΔΙΟΡΘΩΣΗ: Απόκρυψη border αν disabled (σελίδα 2+) Ή αν hideBorder (εξαγωγή)
+        border: shouldHideBorders ? 'none' : '2px dashed #999',
+        cursor: shouldHideBorders ? 'default' : 'move',
         userSelect: 'none',
         zIndex: 10,
         backgroundColor: 'transparent'
@@ -81,8 +85,8 @@ function DraggableResizableBox({ x, y, width, height, onUpdate, children, disabl
       onMouseDown={handleMouseDown}
     >
       {children}
-      {/* Κρύβουμε το handle αν είναι disabled ή hideBorder */}
-      {!disabled && !hideBorder && (
+      {/* Κρύβουμε το handle αν πρέπει να κρυφτούν τα borders */}
+      {!shouldHideBorders && (
         <div
           className="resize-handle"
           onMouseDown={handleResizeStart}
@@ -105,6 +109,7 @@ function DraggableResizableBox({ x, y, width, height, onUpdate, children, disabl
 
 // --- Main Component ---
 export default function A4WordComposer() {
+  // ... (States remain the same)
   const [template, setTemplate] = useState(null);
   const [docHtml, setDocHtml] = useState("");
   const [fontSize, setFontSize] = useState(16);
@@ -122,8 +127,8 @@ export default function A4WordComposer() {
 
   const templateInputRef = useRef(null);
   const docInputRef = useRef(null);
+  // ... (useEffect for library loading remains the same)
 
-  // Load external libraries dynamically via CDN (Remains the same)
   useEffect(() => {
     const scripts = [
       "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js",
@@ -148,6 +153,8 @@ export default function A4WordComposer() {
     });
   }, []);
 
+
+  // ... (handleTemplate, handleDoc, handleReset, Pagination Logic remain the same)
   function handleTemplate(fileOrEvent) {
     const file = fileOrEvent.target?.files?.[0] || fileOrEvent;
     if (!file || !file.type.startsWith("image/")) return;
@@ -172,7 +179,7 @@ export default function A4WordComposer() {
         const result = await window.mammoth.convertToHtml({ arrayBuffer: buffer });
         setDocHtml(result.value || "");
     } catch (error) {
-      console.error("Error converting DOCX:", error);
+      console. error("Error converting DOCX:", error);
     }
   }
 
@@ -187,9 +194,7 @@ export default function A4WordComposer() {
     if (docInputRef.current) docInputRef.current.value = null;
   }
   
-  // Pagination Logic (Remains the same)
   useEffect(() => {
-    // ... (Full pagination logic here) ...
     if (!docHtml || !measureRef.current) {
       setPages([]);
       return;
@@ -275,46 +280,48 @@ export default function A4WordComposer() {
     }
     setPages(newPages);
   }, [docHtml, fontSize, box.width, box.height]);
+  
+  // 📸 Συνάρτηση που παίρνει το Canvas για μια σελίδα
+  const getPageCanvas = useCallback(async (pageEl) => {
+    return await window.html2canvas(pageEl, {
+        scale: 2, 
+        logging: false,
+        useCORS: true,
+        scrollY: 0,
+        scrollX: 0, // Προσθήκη scrollX
+        allowTaint: true // Επιτρέπει τη λήψη περιεχομένου με εξωτερικές πηγές (όπως εικόνες)
+    });
+  }, []);
 
-  // 🚀 ΕΝΗΜΕΡΩΜΕΝΗ ΥΛΟΠΟΙΗΣΗ: Εξαγωγή σε PDF
+
+  // 🚀 ΤΕΛΙΚΗ ΔΙΟΡΘΩΣΗ: Εξαγωγή σε PDF με Χρονισμό
   async function exportPDF() {
-    if (!window.html2canvas || !window.jspdf) {
-        console.error("Required PDF/Canvas libraries not loaded.");
-        return;
-    }
-    if (pages.length === 0) return;
+    if (!window.html2canvas || !window.jspdf || pages.length === 0) return;
 
     setIsExporting(true);
     
+    // 🌟 Βήμα 1: Χρονισμός για να ενημερωθεί το DOM (αφαίρεση borders)
+    await new Promise(resolve => setTimeout(resolve, 50)); 
+
     try {
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF('p', 'mm', 'a4');
         pdf.deletePage(1); 
 
-        // A4 διαστάσεις σε μονάδες mm
         const pdfWidth = 210;
         const pdfHeight = 297;
         
-        // Καθορίζουμε την αναλογία (794px/210mm = ~3.78)
-        const scaleFactor = A4_WIDTH / pdfWidth; 
-
         const pageElements = document.querySelectorAll('.a4-page');
 
         for (let i = 0; i < pageElements.length; i++) {
             const pageEl = pageElements[i];
 
-            // Χρησιμοποιούμε το scrollY:0 για να αποφύγουμε artifacts
-            const canvas = await window.html2canvas(pageEl, {
-                scale: 2, 
-                logging: false,
-                useCORS: true,
-                scrollY: 0, // Σημαντικό για αξιοπιστία
-            });
+            // 🌟 Βήμα 2: Λήψη Canvas (χωρίς borders πλέον)
+            const canvas = await getPageCanvas(pageEl);
 
             const imgData = canvas.toDataURL('image/jpeg', 0.95);
             pdf.addPage(pdfWidth, pdfHeight); 
             
-            // Προσθήκη εικόνας, καλύπτοντας όλη τη σελίδα A4
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
         }
 
@@ -323,19 +330,18 @@ export default function A4WordComposer() {
     } catch (error) {
         console.error("PDF Export Error:", error);
     } finally {
-        setIsExporting(false);
+        setIsExporting(false); // 🌟 Βήμα 3: Επαναφορά borders
     }
   }
 
-  // 🚀 ΕΝΗΜΕΡΩΜΕΝΗ ΥΛΟΠΟΙΗΣΗ: Εξαγωγή σε εικόνα (PNG/JPEG)
+  // 🚀 ΤΕΛΙΚΗ ΔΙΟΡΘΩΣΗ: Εξαγωγή σε εικόνα (PNG/JPEG) με Χρονισμό
   async function exportImages(type) {
-    if (!window.html2canvas) {
-        console.error("HTML2Canvas library not loaded.");
-        return;
-    }
-    if (pages.length === 0) return;
+    if (!window.html2canvas || pages.length === 0) return;
 
     setIsExporting(true);
+    
+    // 🌟 Βήμα 1: Χρονισμός για να ενημερωθεί το DOM (αφαίρεση borders)
+    await new Promise(resolve => setTimeout(resolve, 50)); 
 
     try {
         const pageElements = document.querySelectorAll('.a4-page');
@@ -344,12 +350,8 @@ export default function A4WordComposer() {
         for (let i = 0; i < pageElements.length; i++) {
             const pageEl = pageElements[i];
 
-            const canvas = await window.html2canvas(pageEl, {
-                scale: 2, 
-                logging: false,
-                useCORS: true,
-                scrollY: 0,
-            });
+            // 🌟 Βήμα 2: Λήψη Canvas (χωρίς borders πλέον)
+            const canvas = await getPageCanvas(pageEl);
 
             const imgData = canvas.toDataURL(mimeType, 1.0);
             
@@ -363,11 +365,12 @@ export default function A4WordComposer() {
     } catch (error) {
         console.error(`Image Export (${type}) Error:`, error);
     } finally {
-        setIsExporting(false);
+        setIsExporting(false); // 🌟 Βήμα 3: Επαναφορά borders
     }
   }
   
-  // Drag & Drop Logic (Remains the same)
+  // ... (Drag & Drop Logic remains the same)
+
   const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -403,8 +406,7 @@ export default function A4WordComposer() {
       e.dataTransfer.clearData();
     }
   };
-
-
+  
   if (!libsLoaded) {
       return <div className="p-10 text-center">Φόρτωση βιβλιοθηκών...</div>;
   }
@@ -418,7 +420,7 @@ export default function A4WordComposer() {
       onDrop={handleDrop}
     >
       
-      {/* Κεφαλίδα εφαρμογής */}
+      {/* Κεφαλίδα εφαρμογής (Remains the same) */}
       <header className="mb-6 py-4 bg-white shadow-md rounded-lg flex justify-between items-center px-6">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
           📝 A4 Document Composer
@@ -432,7 +434,7 @@ export default function A4WordComposer() {
         </button>
       </header>
       
-      {/* Κουμπιά Export */}
+      {/* Κουμπιά Export (Remains the same) */}
       <div className="mb-6 flex flex-wrap gap-4 bg-white p-4 rounded shadow">
         <button 
           onClick={exportPDF}
@@ -532,7 +534,7 @@ export default function A4WordComposer() {
                     height={box.height} 
                     onUpdate={setBox}
                     disabled={i > 0} 
-                    hideBorder={isExporting} // 🌟 ΔΙΟΡΘΩΣΗ: Κρύβουμε το border κατά την εξαγωγή
+                    hideBorder={isExporting} // <-- Χρησιμοποιούμε το isExporting εδώ
                 >
                     <div
                         style={{
@@ -576,7 +578,7 @@ export default function A4WordComposer() {
         }}
       />
       
-      {/* Οπτική Επικάλυψη Drag & Drop (Remains the same) */}
+      {/* Drag & Drop Overlay (Remains the same) */}
       {isDragging && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center bg-blue-500 bg-opacity-10 backdrop-blur-sm pointer-events-none"
