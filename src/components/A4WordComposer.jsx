@@ -18,7 +18,7 @@ function DraggableResizableBox({ x, y, width, height, onUpdate, children, disabl
         const dy = e.clientY - startPos.current.y;
         onUpdate({ 
           x: startPos.current.initialX + dx, 
-          y: startPos.current.initialY + dy, 
+          y: startPos.initialY + dy, 
           width: startPos.current.initialW, 
           height: startPos.current.initialH 
         });
@@ -112,10 +112,6 @@ export default function A4WordComposer() {
   const [box, setBox] = useState({ x: 80, y: 120, width: 630, height: 850 });
   const measureRef = useRef(null);
 
-  // Refs για τα input files
-  const templateInputRef = useRef(null);
-  const docInputRef = useRef(null);
-
   // Load external libraries dynamically via CDN
   useEffect(() => {
     const scripts = [
@@ -158,6 +154,7 @@ export default function A4WordComposer() {
     if (!file) return;
     try {
         const buffer = await file.arrayBuffer();
+        // Use the globally available 'mammoth' from CDN
         const result = await window.mammoth.convertToHtml({ arrayBuffer: buffer });
         setDocHtml(result.value || "");
     } catch (error) {
@@ -165,17 +162,6 @@ export default function A4WordComposer() {
     }
   }
 
-  function handleReset() {
-    // Καθαρισμός των States
-    setTemplate(null);
-    setDocHtml("");
-    setPages([]);
-    setFontSize(16);
-    // Επαναφορά των input fields
-    if (templateInputRef.current) templateInputRef.current.value = null;
-    if (docInputRef.current) docInputRef.current.value = null;
-  }
-  
   // --- ΕΝΗΜΕΡΩΜΕΝΗ ΛΟΓΙΚΗ ΣΕΛΙΔΟΠΟΙΗΣΗΣ (με διακοπή κειμένου) ---
   useEffect(() => {
     if (!docHtml || !measureRef.current) {
@@ -189,7 +175,7 @@ export default function A4WordComposer() {
     container.style.width = box.width + "px";
     container.style.margin = "0";
     container.style.padding = "0";
-    container.style.lineHeight = "1.4"; 
+    container.style.lineHeight = "1.4"; // Match the display style
 
     const elements = Array.from(container.children);
     
@@ -202,11 +188,13 @@ export default function A4WordComposer() {
     const newPages = [];
     let remainingElements = [...elements];
     
+    // Loop until all content is paginated
     while (remainingElements.length > 0) {
         let currentPageNodes = [];
         let elementsToProcess = [...remainingElements];
         remainingElements = [];
         
+        // Temporarily clear the container for the new page measurement
         container.innerHTML = '';
         
         let breakPage = false;
@@ -220,14 +208,17 @@ export default function A4WordComposer() {
             const el = elementsToProcess[i];
             const clone = el.cloneNode(true);
             
+            // Check current fit: Append the element to the measuring container and check total height
             container.appendChild(clone);
             
             if (container.scrollHeight <= box.height) {
-                // Element fits entirely.
+                // Element fits entirely. Add it to the current page nodes.
                 currentPageNodes.push(clone);
+                // The element stays in the container for the next measurement iteration
             } else {
                 // Element does not fit entirely or caused overflow
                 
+                // 1. Remove the element that caused the overflow from the container
                 container.removeChild(clone);
 
                 if (el.tagName === 'P') {
@@ -236,51 +227,74 @@ export default function A4WordComposer() {
                     let leftWords = [];
                     let rightWords = [];
                     
+                    // The temporary splitter node (which is now empty)
                     const tempSplitter = el.cloneNode(true); 
                     tempSplitter.textContent = '';
                     
+                    // We must measure relative to what is ALREADY in the container (currentPageNodes)
+                    // We append the temporary splitter (which has the styles but no text yet)
                     container.appendChild(tempSplitter);
 
                     for (let w = 0; w < words.length; w++) {
                         leftWords.push(words[w]);
                         tempSplitter.textContent = leftWords.join(' ');
                         
+                        // Check if the measurement causes the *whole container* to exceed the box height
                         if (container.scrollHeight > box.height) {
                             
-                            leftWords.pop(); 
-                            rightWords = words.slice(w); 
+                            // The current word caused the overflow, so it belongs to the next page.
+                            leftWords.pop(); // Remove the offending word
+                            rightWords = words.slice(w); // The rest goes to next page
                             
-                            // Current page fragment
+                            // 1. Create the fragment for the current page (Final content)
                             const currentFragment = el.cloneNode(true);
                             currentFragment.textContent = leftWords.join(' ');
                             currentPageNodes.push(currentFragment);
                             
-                            // Next page fragment
+                            // 2. Create the fragment for the next page
                             const nextFragment = el.cloneNode(true);
                             nextFragment.textContent = rightWords.join(' ');
                             remainingElements.push(nextFragment);
                             
+                            // Finalize the current page
                             breakPage = true; 
                             break; 
                         }
                     }
                     
-                    // Finalize the current page
+                    // If we finished the word loop without breaking (it fit just perfectly, and we need to commit it)
+                    if (!breakPage) {
+                        // This shouldn't happen if the check outside the loop was correct, 
+                        // but as a fallback, push the full clone and break.
+                         currentPageNodes.push(el.cloneNode(true));
+                         breakPage = true;
+                    }
+                    
+                    // Remove the temporary splitter node
                     container.removeChild(tempSplitter);
                     
                 } else {
-                    // Non-paragraph element (Image, Table, Header) doesn't fit
+                    // 2. Handle non-paragraph elements (Images, Tables, Headers, Lists)
+                    // If the element doesn't fit, and it's not a paragraph, we stop the current page 
+                    // and put the entire element into the next page.
                     remainingElements.push(el);
                     breakPage = true; // Finalize current page immediately
                 }
             }
-            
-            // If page broke or this was the last element, add the rest to remaining
-            if (breakPage && i < elementsToProcess.length - 1) {
+
+            if (i === elementsToProcess.length - 1 && !breakPage) {
+                // Last element processed and it fit. All done for this content block.
+            } else if (!breakPage) {
+                // The element fit, but we must explicitly push the rest of elements to be processed
+                // in the next iteration if they don't fit in this page.
+                // We handle this outside the loop by only processing `elementsToProcess`.
+            } else if (breakPage && i < elementsToProcess.length - 1) {
+                // If we broke the page (due to split or non-fitting element),
+                // the rest of the elements in `elementsToProcess` must go to `remainingElements`.
                 remainingElements.push(...elementsToProcess.slice(i + 1));
             }
 
-            if (breakPage) break; 
+            if (breakPage) break; // Exit the loop to finalize the current page
         }
         
         // Finalize the current page content
@@ -298,15 +312,17 @@ export default function A4WordComposer() {
         return;
     }
     setIsExporting(true);
+    // Use setTimeout to allow React to re-render (hide borders) before capture
     setTimeout(async () => {
       try {
         const { jsPDF } = window.jspdf;
+        // Use pt (points) for accurate PDF measurements
         const pdf = new jsPDF("p", "pt", "a4"); 
         const pageEls = document.querySelectorAll(".a4-page");
 
         for (let i = 0; i < pageEls.length; i++) {
           const canvas = await window.html2canvas(pageEls[i], {
-            scale: 2, // High resolution 
+            scale: 2, // High resolution (approx 300 DPI for 96 DPI base)
             useCORS: true,
             allowTaint: true,
             backgroundColor: "#ffffff",
@@ -320,6 +336,7 @@ export default function A4WordComposer() {
 
           const img = canvas.toDataURL("image/jpeg", 0.9);
           if (i > 0) pdf.addPage();
+          // A4 dimensions in PDF points (595x842)
           pdf.addImage(img, "JPEG", 0, 0, 595, 842);
         }
         pdf.save("document.pdf");
@@ -370,24 +387,6 @@ export default function A4WordComposer() {
 
   return (
     <div className="font-sans p-5 bg-gray-100 min-h-screen">
-      
-      {/* 🌟 ΚΕΦΑΛΙΔΑ ΕΦΑΡΜΟΓΗΣ 🌟 */}
-      <header className="mb-6 py-4 bg-white shadow-md rounded-lg flex justify-between items-center px-6">
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
-          📝 A4 Document Composer
-        </h1>
-        <button
-          onClick={handleReset}
-          className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition duration-150 flex items-center gap-2 text-sm"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-          Καθαρισμός / Επαναφορά
-        </button>
-      </header>
-      {/* --------------------------- */}
-      
       <div className="mb-6 flex flex-wrap gap-4 bg-white p-4 rounded shadow">
         <div className="flex gap-2">
           <button 
@@ -417,23 +416,11 @@ export default function A4WordComposer() {
       <div className="flex gap-5 flex-wrap mb-6 bg-white p-4 rounded shadow">
         <label className="flex flex-col gap-1 text-sm font-medium">
           📄 Επιλογή template (JPEG/PNG)
-          <input 
-             type="file" 
-             accept="image/*" 
-             onChange={handleTemplate} 
-             className="text-gray-600"
-             ref={templateInputRef} 
-          />
+          <input type="file" accept="image/*" onChange={handleTemplate} className="text-gray-600" />
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium">
           📝 Επιλογή Word (.docx)
-          <input 
-             type="file" 
-             accept=".docx" 
-             onChange={handleDoc} 
-             className="text-gray-600"
-             ref={docInputRef} 
-          />
+          <input type="file" accept=".docx" onChange={handleDoc} className="text-gray-600" />
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium w-48">
           🔠 Μέγεθος κειμένου: {fontSize}px
