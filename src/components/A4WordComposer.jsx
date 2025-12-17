@@ -74,8 +74,20 @@ export default function A4WordComposer() {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
+    // --- Λειτουργία Επαναφοράς (Reset) ---
+    const handleReset = () => {
+        setTemplate(null);
+        setDocHtml("");
+        setPages([]);
+        setFontSize(16);
+        setTemplateFileName("Επιλέξτε εικόνα...");
+        setDocFileName("Επιλέξτε .docx...");
+        setBox({ x: 80, y: 120, width: 630, height: 850 });
+    };
+
     // File Handlers
     const processFile = async (file) => {
+        if (!file) return;
         if (file.type.startsWith("image/")) {
             setTemplateFileName(file.name);
             const r = new FileReader(); r.onload = () => setTemplate(r.result); r.readAsDataURL(file);
@@ -151,7 +163,6 @@ export default function A4WordComposer() {
         <div className="p-4 bg-gray-100 min-h-screen relative" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
             <style>{`@media (max-width:768px){.a4-page-scaled{transform:scale(0.45);transform-origin:top center;margin-bottom:-550px;box-shadow:none!important;}}`}</style>
             
-            {/* Overlay για Drag & Drop */}
             {isDraggingFile && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-blue-500 bg-opacity-20 border-4 border-dashed border-blue-500 pointer-events-none">
                     <h2 className="text-2xl font-bold text-blue-700 bg-white p-6 rounded-xl shadow-xl">Ρίξτε το αρχείο εδώ ✨</h2>
@@ -161,6 +172,8 @@ export default function A4WordComposer() {
             <header className="flex justify-between items-center bg-white p-4 shadow-sm rounded-xl mb-4">
                 <h1 className="text-xl font-black text-gray-800">A4 COMPOSER <span className="text-blue-500 text-xs">PRO</span></h1>
                 <div className="flex gap-2">
+                    {/* Επανεμφάνιση Reset Button */}
+                    <button onClick={handleReset} className="bg-red-50 text-red-600 px-3 py-2 rounded-lg text-xs font-bold hover:bg-red-100 transition">Reset</button>
                     <button onClick={async() => { const pdf = await getPDF(); window.open(URL.createObjectURL(pdf.output('blob')), '_blank'); }} disabled={pages.length===0 || isExporting} className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:bg-black transition">👁️ Preview</button>
                     <button onClick={async() => { const pdf = await getPDF(); pdf.save('document.pdf'); }} disabled={pages.length===0 || isExporting} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:bg-blue-700 transition">📥 Download</button>
                 </div>
@@ -184,14 +197,13 @@ export default function A4WordComposer() {
                     <div className="grid grid-cols-4 gap-1">
                         {['x','y','width','height'].map(k => <input key={k} type="number" value={Math.round(box[k])} onChange={e=>setBox({...box,[k]:Number(e.target.value)})} className="border rounded p-1 text-xs text-center font-mono"/>)}
                     </div>
-                    <p className="text-[9px] text-gray-400 mt-2">* Σύρετε το πλαίσιο στην 1η σελίδα (Desktop)</p>
                 </div>
             </div>
 
             <div className="flex flex-col items-center gap-10 pb-20">
                 {pages.map((html, i) => (
                     <div key={i} className={`relative bg-white shadow-2xl overflow-hidden a4-page ${isMobile ? 'a4-page-scaled' : ''}`} style={{ width: A4_WIDTH, height: A4_HEIGHT }}>
-                        {template && <img src={template} className="absolute inset-0 w-full h-full object-cover pointer-events-none" />}
+                        {template && <img src={template} className="absolute inset-0 w-full h-full object-cover pointer-events-none" alt="" />}
                         <DraggableResizableBox x={box.x} y={box.y} width={box.width} height={box.height} onUpdate={setBox} disabled={i>0 || isMobile} hideBorder={isExporting}>
                             <div className="w-full h-full overflow-hidden" style={{ fontSize: `${fontSize}px`, lineHeight: "1.4" }} dangerouslySetInnerHTML={{ __html: html }} />
                         </DraggableResizableBox>
