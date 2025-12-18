@@ -8,25 +8,14 @@ function DraggableResizableBox({ x, y, width, height, onUpdate, children, disabl
     const [drag, setDrag] = useState(false);
     const [resize, setResize] = useState(false);
     const start = useRef({});
-
     const enabled = !disabled && !hideBorder;
 
     useEffect(() => {
         const move = (e) => {
             const dx = e.clientX - start.current.x;
             const dy = e.clientY - start.current.y;
-
-            if (drag) {
-                onUpdate({ x: start.current.ix + dx, y: start.current.iy + dy, width: start.current.w, height: start.current.h });
-            }
-            if (resize) {
-                onUpdate({
-                    x: start.current.ix,
-                    y: start.current.iy,
-                    width: Math.max(100, start.current.w + dx),
-                    height: Math.max(100, start.current.h + dy)
-                });
-            }
+            if (drag) onUpdate({ x: start.current.ix + dx, y: start.current.iy + dy, width: start.current.w, height: start.current.h });
+            if (resize) onUpdate({ x: start.current.ix, y: start.current.iy, width: Math.max(100, start.current.w + dx), height: Math.max(100, start.current.h + dy) });
         };
         const up = () => { setDrag(false); setResize(false); };
         if (drag || resize) {
@@ -82,7 +71,7 @@ function DraggableResizableBox({ x, y, width, height, onUpdate, children, disabl
     );
 }
 
-/* ---------------- MAIN APP ---------------- */
+/* ---------------- MAIN ---------------- */
 export default function A4WordComposer() {
     const [template, setTemplate] = useState(null);
     const [docHtml, setDocHtml] = useState("");
@@ -90,7 +79,8 @@ export default function A4WordComposer() {
     const [pages, setPages] = useState([]);
     const [box, setBox] = useState({ x: 80, y: 120, width: 630, height: 850 });
     const [isExporting, setIsExporting] = useState(false);
-    const [dragging, setDragging] = useState(false);
+    const [dragActive, setDragActive] = useState(false);
+    const [dragLabel, setDragLabel] = useState("");
     const [libsLoaded, setLibsLoaded] = useState(false);
     const [templateName, setTemplateName] = useState("Επιλέξτε εικόνα...");
     const [docName, setDocName] = useState("Επιλέξτε .docx...");
@@ -117,7 +107,7 @@ export default function A4WordComposer() {
         return () => window.removeEventListener("resize", resize);
     }, []);
 
-    /* -------- File handlers (FIXED) -------- */
+    /* -------- FILE HANDLERS -------- */
     const handleTemplateFile = (file) => {
         if (!file || !file.type.startsWith("image/")) return;
         setTemplateName(file.name);
@@ -134,82 +124,60 @@ export default function A4WordComposer() {
         setDocHtml(res.value);
     };
 
-    const handleDrop = (e) => {
+    /* -------- CLEAN DRAG & DROP -------- */
+    const onDragOver = (e) => {
         e.preventDefault();
-        setDragging(false);
+        const item = e.dataTransfer.items?.[0];
+        if (!item) return;
+
+        if (item.type.startsWith("image/")) {
+            setDragLabel("🖼 Ρίξτε εικόνα για φόντο");
+            setDragActive(true);
+        } else if (item.kind === "file" && item.type === "") {
+            setDragLabel("📄 Ρίξτε αρχείο Word (.docx)");
+            setDragActive(true);
+        } else {
+            setDragActive(false);
+        }
+    };
+
+    const onDrop = (e) => {
+        e.preventDefault();
+        setDragActive(false);
+
         const file = e.dataTransfer.files[0];
         if (!file) return;
+
         if (file.type.startsWith("image/")) handleTemplateFile(file);
         else if (file.name.endsWith(".docx")) handleDocFile(file);
     };
 
-    /* -------- Auto paginate -------- */
-    useEffect(() => {
-        if (!docHtml || !measureRef.current) { setPages([]); return; }
-        const c = measureRef.current;
-        c.innerHTML = docHtml;
-        c.style.fontSize = fontSize + "px";
-        c.style.width = box.width + "px";
+    const onDragLeave = () => setDragActive(false);
 
-        const nodes = Array.from(c.children);
-        let pagesArr = [];
-        let rest = [...nodes];
-
-        while (rest.length) {
-            c.innerHTML = "";
-            let page = [];
-            let i = 0;
-            for (; i < rest.length; i++) {
-                c.appendChild(rest[i].cloneNode(true));
-                if (c.scrollHeight <= box.height) page.push(rest[i].outerHTML);
-                else break;
-            }
-            pagesArr.push(page.join(""));
-            rest = rest.slice(i);
-            if (i === 0) break;
-        }
-        setPages(pagesArr);
-    }, [docHtml, fontSize, box]);
-
-    /* -------- PDF -------- */
-    const getPDF = async () => {
-        setIsExporting(true);
-        await new Promise(r => setTimeout(r, 200));
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF("p", "mm", "a4");
-        const els = document.querySelectorAll(".a4-page");
-        for (let i = 0; i < els.length; i++) {
-            const canvas = await window.html2canvas(els[i], { scale: 2 });
-            if (i > 0) pdf.addPage();
-            pdf.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", 0, 0, 210, 297);
-        }
-        setIsExporting(false);
-        return pdf;
-    };
-
-    if (!libsLoaded) return <div className="p-10 text-center">Φόρτωση βιβλιοθηκών…</div>;
+    if (!libsLoaded) return <div className="p-10 text-center">Φόρτωση…</div>;
 
     return (
         <div
             className="p-4 bg-gray-100 min-h-screen"
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={handleDrop}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
         >
-
-            {dragging && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-blue-500 bg-opacity-20 border-4 border-dashed border-blue-500">
-                    <h2 className="text-2xl font-bold bg-white p-6 rounded-xl">Ρίξτε το αρχείο εδώ</h2>
+            {dragActive && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-blue-600 bg-opacity-30 pointer-events-none">
+                    <div className="bg-white px-10 py-6 rounded-xl shadow-xl text-xl font-bold">
+                        {dragLabel}
+                    </div>
                 </div>
             )}
 
-            {/* -------- HEADER -------- */}
+            {/* HEADER */}
             <header className="bg-white p-4 rounded-xl shadow mb-4 flex gap-2 items-center">
                 <h1 className="font-black text-lg">A4 COMPOSER</h1>
 
                 <input id="img" type="file" hidden accept="image/*" onChange={e => handleTemplateFile(e.target.files[0])} />
                 <label htmlFor="img" className="border-2 border-dashed px-2 py-1 rounded cursor-pointer text-xs">
-                    🖼️ {templateName}
+                    🖼 {templateName}
                 </label>
 
                 <input id="doc" type="file" hidden accept=".docx" onChange={e => handleDocFile(e.target.files[0])} />
@@ -224,24 +192,15 @@ export default function A4WordComposer() {
                 </div>
 
                 <button onClick={() => window.location.reload()} className="ml-auto bg-red-100 text-red-600 px-3 py-1 rounded">Reset</button>
-                <button onClick={async () => window.open(URL.createObjectURL((await getPDF()).output("blob")))} className="bg-gray-800 text-white px-3 py-1 rounded">Preview</button>
-                <button onClick={async () => (await getPDF()).save("document.pdf")} className="bg-blue-600 text-white px-3 py-1 rounded">Download</button>
+                <button onClick={async () => window.open(URL.createObjectURL((await (async()=>{setIsExporting(true);await new Promise(r=>setTimeout(r,200));const {jsPDF}=window.jspdf;const pdf=new jsPDF("p","mm","a4");const els=document.querySelectorAll(".a4-page");for(let i=0;i<els.length;i++){const c=await window.html2canvas(els[i],{scale:2});if(i>0)pdf.addPage();pdf.addImage(c.toDataURL("image/jpeg",0.95),"JPEG",0,0,210,297);}setIsExporting(false);return pdf;})()).output("blob")))} className="bg-gray-800 text-white px-3 py-1 rounded">Preview</button>
+                <button onClick={async () => (await (async()=>{setIsExporting(true);await new Promise(r=>setTimeout(r,200));const {jsPDF}=window.jspdf;const pdf=new jsPDF("p","mm","a4");const els=document.querySelectorAll(".a4-page");for(let i=0;i<els.length;i++){const c=await window.html2canvas(els[i],{scale:2});if(i>0)pdf.addPage();pdf.addImage(c.toDataURL("image/jpeg",0.95),"JPEG",0,0,210,297);}setIsExporting(false);return pdf;})()).save("document.pdf")} className="bg-blue-600 text-white px-3 py-1 rounded">Download</button>
             </header>
 
-            {/* -------- PAGES -------- */}
             <div className="flex flex-col items-center gap-10">
                 {pages.map((html, i) => (
                     <div key={i} className="relative bg-white shadow-2xl a4-page" style={{ width: A4_WIDTH, height: A4_HEIGHT }}>
                         {template && <img src={template} className="absolute inset-0 w-full h-full object-cover" alt="" />}
-                        <DraggableResizableBox
-                            x={box.x}
-                            y={box.y}
-                            width={box.width}
-                            height={box.height}
-                            onUpdate={setBox}
-                            disabled={i > 0 || isMobile}
-                            hideBorder={isExporting}
-                        >
+                        <DraggableResizableBox x={box.x} y={box.y} width={box.width} height={box.height} onUpdate={setBox} disabled={i > 0 || isMobile} hideBorder={isExporting}>
                             <div style={{ fontSize, lineHeight: 1.4 }} dangerouslySetInnerHTML={{ __html: html }} />
                         </DraggableResizableBox>
                     </div>
