@@ -107,13 +107,13 @@ export default function A4Composer() {
   const [box, setBox] = useState({ x: 80, y: 120, width: 630, height: 850 });
   const measureRef = useRef(null);
 
-  // Έτοιμα template (μπορείς να προσθέσεις περισσότερα)
+  // Template URLs από public/templates
   const templates = [
-    { name: "Template 1", url: "https://via.placeholder.com/794x1123/ffcccc/000000?text=Template+1" },
-    { name: "Template 2", url: "https://via.placeholder.com/794x1123/ccffcc/000000?text=Template+2" },
-    { name: "Template 3", url: "https://via.placeholder.com/794x1123/ccccff/000000?text=Template+3" },
-    { name: "Template 4", url: "https://via.placeholder.com/794x1123/ffffcc/000000?text=Template+4" },
-    { name: "Template 5", url: "https://via.placeholder.com/794x1123/ccffff/000000?text=Template+5" }
+    { name: "Template 1", url: "/templates/template1.png" },
+    { name: "Template 2", url: "/templates/template2.png" },
+    { name: "Template 3", url: "/templates/template3.png" },
+    { name: "Template 4", url: "/templates/template4.png" },
+    { name: "Template 5", url: "/templates/template5.png" }
   ];
 
   /* =========================
