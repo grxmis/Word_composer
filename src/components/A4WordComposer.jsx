@@ -107,11 +107,13 @@ export default function A4Composer() {
   const [box, setBox] = useState({ x: 80, y: 120, width: 630, height: 850 });
   const measureRef = useRef(null);
 
-  // Έτοιμα template (μπορείς να προσθέσεις περισσότερα URL ή paths)
+  // Έτοιμα template (μπορείς να προσθέσεις περισσότερα)
   const templates = [
     { name: "Template 1", url: "https://via.placeholder.com/794x1123/ffcccc/000000?text=Template+1" },
     { name: "Template 2", url: "https://via.placeholder.com/794x1123/ccffcc/000000?text=Template+2" },
-    { name: "Template 3", url: "https://via.placeholder.com/794x1123/ccccff/000000?text=Template+3" }
+    { name: "Template 3", url: "https://via.placeholder.com/794x1123/ccccff/000000?text=Template+3" },
+    { name: "Template 4", url: "https://via.placeholder.com/794x1123/ffffcc/000000?text=Template+4" },
+    { name: "Template 5", url: "https://via.placeholder.com/794x1123/ccffff/000000?text=Template+5" }
   ];
 
   /* =========================
@@ -232,15 +234,15 @@ export default function A4Composer() {
         </div>
       </header>
 
-      {/* TEMPLATE SELECT */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      {/* TEMPLATE SCROLLABLE GALLERY */}
+      <div className="mb-6 overflow-x-auto flex gap-4 p-2 bg-white rounded shadow">
         {templates.map(t => (
           <div
             key={t.name}
-            className={`cursor-pointer border-2 rounded p-1 ${template === t.url ? "border-blue-600" : "border-gray-300"}`}
+            className={`cursor-pointer border-4 rounded ${template === t.url ? "border-blue-600" : "border-transparent"}`}
             onClick={() => { setTemplate(t.url); setTemplateName(t.name); }}
           >
-            <img src={t.url} alt={t.name} className="w-full h-auto" />
+            <img src={t.url} alt={t.name} className="h-40 w-auto object-cover rounded" />
             <div className="text-center mt-1 font-bold">{t.name}</div>
           </div>
         ))}
