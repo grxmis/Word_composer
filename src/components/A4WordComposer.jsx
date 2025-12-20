@@ -38,7 +38,10 @@ function DraggableResizableBox({
       }
     };
 
-    const stop = () => { setDrag(false); setResize(false); };
+    const stop = () => {
+      setDrag(false);
+      setResize(false);
+    };
 
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", stop);
@@ -52,8 +55,10 @@ function DraggableResizableBox({
     <div
       style={{
         position: "absolute",
-        left: x, top: y,
-        width, height,
+        left: x,
+        top: y,
+        width,
+        height,
         border: hideBorder ? "none" : "2px dashed #999",
         cursor: enabled ? "move" : "default",
         zIndex: 10
@@ -62,17 +67,26 @@ function DraggableResizableBox({
         if (!enabled) return;
         if (e.target.classList.contains("resize")) return;
         setDrag(true);
-        start.current = { mx: e.clientX, my: e.clientY, box: { x, y, width, height } };
+        start.current = {
+          mx: e.clientX,
+          my: e.clientY,
+          box: { x, y, width, height }
+        };
       }}
     >
       {children}
+
       {enabled && (
         <div
           className="resize"
           onMouseDown={e => {
             e.stopPropagation();
             setResize(true);
-            start.current = { mx: e.clientX, my: e.clientY, box: { x, y, width, height } };
+            start.current = {
+              mx: e.clientX,
+              my: e.clientY,
+              box: { x, y, width, height }
+            };
           }}
           style={{
             position: "absolute",
@@ -97,14 +111,20 @@ export default function A4Composer() {
 
   const [template, setTemplate] = useState(null);
   const [templateName, setTemplateName] = useState("Επιλέξτε εικόνα...");
-  const [docName, setDocName] = useState("Επιλέξτε .docx...");
+  const [docName, setDocName] = useState("Επιλέξτε αρχείο...");
   const [docHtml, setDocHtml] = useState("");
   const [pages, setPages] = useState([]);
   const [fontSize, setFontSize] = useState(16);
   const [exporting, setExporting] = useState(false);
   const [dragging, setDragging] = useState(false);
 
-  const [box, setBox] = useState({ x: 80, y: 120, width: 630, height: 850 });
+  const [box, setBox] = useState({
+    x: 80,
+    y: 120,
+    width: 630,
+    height: 850
+  });
+
   const measureRef = useRef(null);
 
   /* =========================
@@ -114,10 +134,14 @@ export default function A4Composer() {
     ["mammoth.browser.min.js", "html2canvas.min.js", "jspdf.umd.min.js"]
       .forEach(src => {
         const s = document.createElement("script");
-        s.src = "https://cdnjs.cloudflare.com/ajax/libs/" +
-          (src.includes("mammoth") ? "mammoth/1.6.0/" :
-           src.includes("html2canvas") ? "html2canvas/1.4.1/" :
-           "jspdf/2.5.1/") + src;
+        s.src =
+          "https://cdnjs.cloudflare.com/ajax/libs/" +
+          (src.includes("mammoth")
+            ? "mammoth/1.6.0/"
+            : src.includes("html2canvas")
+            ? "html2canvas/1.4.1/"
+            : "jspdf/2.5.1/") +
+          src;
         document.body.appendChild(s);
       });
   }, []);
@@ -135,12 +159,46 @@ export default function A4Composer() {
   };
 
   const loadDoc = async file => {
-    if (!file?.name.endsWith(".docx")) return;
+    if (!file) return;
+
     setDocName(file.name);
-    const buf = await file.arrayBuffer();
-    const res = await window.mammoth.convertToHtml({ arrayBuffer: buf });
-    setDocHtml(res.value);
-    setPages([res.value]);
+
+    /* TXT */
+    if (file.name.toLowerCase().endsWith(".txt")) {
+      const text = await file.text();
+      const html = text
+        .split("\n")
+        .map(line => `<p>${line}</p>`)
+        .join("");
+      setDocHtml(html);
+      setPages([html]);
+      return;
+    }
+
+    /* DOCX */
+    if (file.name.toLowerCase().endsWith(".docx")) {
+      const buf = await file.arrayBuffer();
+      const res = await window.mammoth.convertToHtml({
+        arrayBuffer: buf
+      });
+      setDocHtml(res.value);
+      setPages([res.value]);
+      return;
+    }
+
+    /* DOC / ODT */
+    if (
+      file.name.toLowerCase().endsWith(".doc") ||
+      file.name.toLowerCase().endsWith(".odt")
+    ) {
+      alert(
+        "Τα αρχεία .doc και .odt δεν υποστηρίζονται.\n\n" +
+        "Μετατρέψτε τα σε .docx και δοκιμάστε ξανά."
+      );
+      return;
+    }
+
+    alert("Μη υποστηριζόμενος τύπος αρχείου.");
   };
 
   /* =========================
@@ -151,8 +209,9 @@ export default function A4Composer() {
     setDragging(false);
     const f = e.dataTransfer.files[0];
     if (!f) return;
+
     if (f.type.startsWith("image/")) loadTemplate(f);
-    else if (f.name.endsWith(".docx")) loadDoc(f);
+    else loadDoc(f);
   };
 
   /* =========================
@@ -167,9 +226,11 @@ export default function A4Composer() {
     container.innerHTML = docHtml;
 
     const nodes = Array.from(container.children);
-    let current = [], result = [];
+    let current = [];
+    let result = [];
 
     container.innerHTML = "";
+
     for (let n of nodes) {
       container.appendChild(n.cloneNode(true));
       if (container.scrollHeight > box.height) {
@@ -181,6 +242,7 @@ export default function A4Composer() {
         current.push(n.outerHTML);
       }
     }
+
     if (current.length) result.push(current.join(""));
     setPages(result);
   }, [docHtml, fontSize, box.width, box.height]);
@@ -188,7 +250,7 @@ export default function A4Composer() {
   /* =========================
             PDF
   ========================= */
-  const exportPDF = async (preview) => {
+  const exportPDF = async preview => {
     setExporting(true);
     await new Promise(r => setTimeout(r, 200));
 
@@ -201,6 +263,7 @@ export default function A4Composer() {
       if (i) pdf.addPage();
       pdf.addImage(c, "JPEG", 0, 0, 210, 297);
     }
+
     setExporting(false);
 
     preview
@@ -214,52 +277,93 @@ export default function A4Composer() {
   return (
     <div
       className="p-4 bg-gray-100 min-h-screen"
-      onDragOver={e => { e.preventDefault(); setDragging(true); }}
+      onDragOver={e => {
+        e.preventDefault();
+        setDragging(true);
+      }}
       onDrop={onDrop}
       onDragLeave={() => setDragging(false)}
     >
-
       {dragging && (
         <div className="fixed inset-0 bg-blue-500/20 border-4 border-dashed border-blue-600 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl font-bold">Ρίξτε αρχείο εδώ</div>
+          <div className="bg-white p-6 rounded-xl font-bold">
+            Ρίξτε αρχείο εδώ
+          </div>
         </div>
       )}
 
-      {/* HEADER */}
       <header className="bg-white p-4 rounded-xl shadow flex justify-between mb-4">
         <h1 className="font-black">A4 COMPOSER</h1>
         <div className="flex gap-2">
-          <button onClick={() => location.reload()} className="px-3 py-2 bg-red-100 rounded">Reset</button>
-          <button onClick={() => exportPDF(true)} className="px-3 py-2 bg-gray-800 text-white rounded">Preview</button>
-          <button onClick={() => exportPDF(false)} className="px-3 py-2 bg-blue-600 text-white rounded">Download</button>
+          <button
+            onClick={() => location.reload()}
+            className="px-3 py-2 bg-red-100 rounded"
+          >
+            Reset
+          </button>
+          <button
+            onClick={() => exportPDF(true)}
+            className="px-3 py-2 bg-gray-800 text-white rounded"
+          >
+            Preview
+          </button>
+          <button
+            onClick={() => exportPDF(false)}
+            className="px-3 py-2 bg-blue-600 text-white rounded"
+          >
+            Download
+          </button>
         </div>
       </header>
 
-      {/* FILES */}
       <div className="grid grid-cols-2 gap-4 mb-6">
         <label className="border-2 border-dashed p-3 rounded cursor-pointer">
           🖼️ {templateName}
-          <input hidden type="file" accept="image/*" onChange={e => loadTemplate(e.target.files[0])}/>
+          <input
+            hidden
+            type="file"
+            accept="image/*"
+            onChange={e => loadTemplate(e.target.files[0])}
+          />
         </label>
+
         <label className="border-2 border-dashed p-3 rounded cursor-pointer">
           📄 {docName}
-          <input hidden type="file" accept=".docx" onChange={e => loadDoc(e.target.files[0])}/>
+          <input
+            hidden
+            type="file"
+            accept=".docx,.txt,.doc,.odt"
+            onChange={e => loadDoc(e.target.files[0])}
+          />
         </label>
       </div>
 
-      {/* FONT */}
       <div className="bg-white p-4 rounded mb-6">
-        <input type="range" min="10" max="40" value={fontSize}
-          onChange={e => setFontSize(+e.target.value)} />
+        <input
+          type="range"
+          min="10"
+          max="40"
+          value={fontSize}
+          onChange={e => setFontSize(+e.target.value)}
+        />
         <div className="text-center font-bold">{fontSize}px</div>
       </div>
 
-      {/* PAGES */}
       <div className="flex flex-col items-center gap-10">
         {pages.map((html, i) => (
-          <div key={i} className="a4 relative bg-white shadow-2xl"
-               style={{ width: A4_WIDTH, height: A4_HEIGHT }}>
-            {template && <img src={template} className="absolute inset-0 w-full h-full object-cover" alt="" />}
+          <div
+            key={i}
+            className="a4 relative bg-white shadow-2xl"
+            style={{ width: A4_WIDTH, height: A4_HEIGHT }}
+          >
+            {template && (
+              <img
+                src={template}
+                className="absolute inset-0 w-full h-full object-cover"
+                alt=""
+              />
+            )}
+
             <DraggableResizableBox
               {...box}
               onUpdate={setBox}
@@ -275,7 +379,10 @@ export default function A4Composer() {
         ))}
       </div>
 
-      <div ref={measureRef} style={{ position: "absolute", visibility: "hidden" }} />
+      <div
+        ref={measureRef}
+        style={{ position: "absolute", visibility: "hidden" }}
+      />
     </div>
   );
 }
