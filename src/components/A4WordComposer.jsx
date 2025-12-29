@@ -59,7 +59,7 @@ function DraggableResizableBox({
         top: y,
         width,
         height,
-        border: hideBorder ? "none" : "2px dashed #999",
+        border: hideBorder ? "none" : "2px dashed #2563eb",
         cursor: enabled ? "move" : "default",
         zIndex: 10
       }}
@@ -75,7 +75,6 @@ function DraggableResizableBox({
       }}
     >
       {children}
-
       {enabled && (
         <div
           className="resize"
@@ -107,170 +106,241 @@ function DraggableResizableBox({
 /* =========================
         MAIN APP
 ========================= */
-export default function A4ComposerPRO() {
-
+export default function A4Composer() {
   const [template, setTemplate] = useState(null);
-  const [templateName, setTemplateName] = useState("Επιλέξτε template...");
-  const [contentName, setContentName] = useState("PDF ή εικόνα...");
-  const [contentImage, setContentImage] = useState(null);
+  const [templateName, setTemplateName] = useState("Επιλέξτε φόντο...");
+  const [docName, setDocName] = useState("Επιλέξτε αρχείο (PDF, DOCX, TXT)...");
+  const [docHtml, setDocHtml] = useState("");
+  const [pages, setPages] = useState([]);
+  const [fontSize, setFontSize] = useState(16);
+  const [opacity, setOpacity] = useState(1);
   const [exporting, setExporting] = useState(false);
   const [dragging, setDragging] = useState(false);
 
   const [box, setBox] = useState({
-    x: 60,
-    y: 60,
-    width: 670,
+    x: 50,
+    y: 50,
+    width: 694,
     height: 1000
   });
 
-  /* =========================
-       Load external libs
-  ========================= */
+  const measureRef = useRef(null);
+
+  // Load libraries
   useEffect(() => {
     const libs = [
-      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
-      "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
-      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+      "mammoth/1.6.0/mammoth.browser.min.js",
+      "html2canvas/1.4.1/html2canvas.min.js",
+      "jspdf/2.5.1/jspdf.umd.min.js",
+      "pdf.js/3.11.174/pdf.min.js"
     ];
     libs.forEach(src => {
       const s = document.createElement("script");
-      s.src = src;
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/" + src;
       document.body.appendChild(s);
     });
   }, []);
 
-  /* =========================
-         FILE HANDLERS
-  ========================= */
   const loadTemplate = file => {
     if (!file?.type.startsWith("image/")) return;
     setTemplateName(file.name);
     const r = new FileReader();
     r.onload = () => setTemplate(r.result);
     r.readAsDataURL(file);
+    if (pages.length === 0) setPages([""]);
   };
 
-  const loadContent = async file => {
+  const loadDoc = async file => {
     if (!file) return;
-    setContentName(file.name);
+    setDocName(file.name);
 
-    /* IMAGE */
-    if (file.type.startsWith("image/")) {
-      const r = new FileReader();
-      r.onload = () => setContentImage(r.result);
-      r.readAsDataURL(file);
-      return;
-    }
-
-    /* PDF */
+    // --- PDF HANDLER ---
     if (file.type === "application/pdf") {
-      const buf = await file.arrayBuffer();
-      const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
-      const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 2 });
+      const reader = new FileReader();
+      reader.onload = async function() {
+        const typedarray = new Uint8Array(this.result);
+        const pdfjsLib = window['pdfjs-dist/build/pdf'];
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        const pdf = await pdfjsLib.getDocument(typedarray).promise;
+        let pdfPages = [];
 
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: 2 });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
 
-      await page.render({ canvasContext: ctx, viewport }).promise;
-      setContentImage(canvas.toDataURL("image/png"));
+          await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+          // Αφαίρεση Λευκού Φόντου
+          const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
+          for (let j = 0; j < data.length; j += 4) {
+            // Αν το pixel είναι λευκό ή σχεδόν λευκό, το κάνουμε διάφανο
+            if (data[j] > 235 && data[j+1] > 235 && data[j+2] > 235) {
+              data[j + 3] = 0; 
+            }
+          }
+          context.putImageData(imageData, 0, 0);
+          
+          pdfPages.push(`<img src="${canvas.toDataURL()}" style="width:100%; height:auto; display:block;" />`);
+        }
+        setPages(pdfPages);
+        setDocHtml("PDF_MODE"); 
+      };
+      reader.readAsArrayBuffer(file);
       return;
     }
 
-    alert("Υποστηρίζονται μόνο PDF ή εικόνες.");
+    // --- TXT HANDLER ---
+    if (file.name.toLowerCase().endsWith(".txt")) {
+      const text = await file.text();
+      const html = text.split("\n").map(line => `<p>${line}</p>`).join("");
+      setDocHtml(html);
+      return;
+    }
+
+    // --- DOCX HANDLER ---
+    if (file.name.toLowerCase().endsWith(".docx")) {
+      const buf = await file.arrayBuffer();
+      const options = {
+        convertImage: window.mammoth.images.imgElement(img => 
+          img.readAsDataURL().then(src => ({ src }))
+        )
+      };
+      const res = await window.mammoth.convertToHtml({ arrayBuffer: buf }, options);
+      setDocHtml(res.value);
+      return;
+    }
+
+    alert("Μη υποστηριζόμενος τύπος αρχείου.");
   };
 
-  /* =========================
-            PDF EXPORT
-  ========================= */
+  // Pagination for Text/Word
+  useEffect(() => {
+    if (!docHtml || docHtml === "PDF_MODE" || !measureRef.current) return;
+
+    const container = measureRef.current;
+    container.style.width = box.width + "px";
+    container.style.fontSize = fontSize + "px";
+    container.innerHTML = docHtml;
+
+    const nodes = Array.from(container.children);
+    let current = [];
+    let result = [];
+    container.innerHTML = "";
+
+    for (let n of nodes) {
+      container.appendChild(n.cloneNode(true));
+      if (container.scrollHeight > box.height) {
+        container.innerHTML = "";
+        result.push(current.join(""));
+        current = [n.outerHTML];
+        container.innerHTML = n.outerHTML;
+      } else {
+        current.push(n.outerHTML);
+      }
+    }
+    if (current.length) result.push(current.join(""));
+    setPages(result);
+  }, [docHtml, fontSize, box.width, box.height]);
+
   const exportPDF = async preview => {
     setExporting(true);
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 300));
 
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF("p", "mm", "a4");
 
-    const el = document.querySelector(".a4");
-    const canvas = await window.html2canvas(el, { scale: 2 });
-    pdf.addImage(canvas, "JPEG", 0, 0, 210, 297);
+    const els = document.querySelectorAll(".a4-page");
+    for (let i = 0; i < els.length; i++) {
+      const canvas = await window.html2canvas(els[i], { scale: 2, useCORS: true });
+      if (i) pdf.addPage();
+      pdf.addImage(canvas, "JPEG", 0, 0, 210, 297, undefined, 'FAST');
+    }
 
     setExporting(false);
-
-    preview
-      ? window.open(URL.createObjectURL(pdf.output("blob")))
-      : pdf.save("document.pdf");
+    preview ? window.open(URL.createObjectURL(pdf.output("blob"))) : pdf.save("composed_doc.pdf");
   };
 
-  /* =========================
-              UI
-  ========================= */
   return (
-    <div
-      className="p-4 bg-gray-100 min-h-screen"
-      onDragOver={e => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDrop={e => {
-        e.preventDefault();
-        setDragging(false);
-        const f = e.dataTransfer.files[0];
-        if (!f) return;
-        if (f.type.startsWith("image/")) loadTemplate(f);
-        else loadContent(f);
-      }}
-      onDragLeave={() => setDragging(false)}
+    <div className="p-6 bg-slate-200 min-h-screen font-sans text-slate-800"
+      onDragOver={e => { e.preventDefault(); setDragging(true); }}
+      onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if(f.type.startsWith("image/")) loadTemplate(f); else loadDoc(f); }}
     >
       {dragging && (
-        <div className="fixed inset-0 bg-blue-500/20 border-4 border-dashed border-blue-600 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl font-bold">
-            Ρίξτε PDF ή εικόνα εδώ
-          </div>
+        <div className="fixed inset-0 bg-blue-600/30 border-8 border-dashed border-blue-600 flex items-center justify-center z-[100] backdrop-blur-sm">
+          <div className="bg-white p-8 rounded-2xl shadow-2xl text-2xl font-black">Ρίξτε το αρχείο εδώ</div>
         </div>
       )}
 
-      <header className="bg-white p-4 rounded-xl shadow flex justify-between mb-4">
-        <h1 className="font-black">A4 COMPOSER – PRO MODE</h1>
-        <div className="flex gap-2">
-          <button onClick={() => location.reload()} className="px-3 py-2 bg-red-100 rounded">
-            Reset
-          </button>
-          <button onClick={() => exportPDF(true)} className="px-3 py-2 bg-gray-800 text-white rounded">
-            Preview
-          </button>
-          <button onClick={() => exportPDF(false)} className="px-3 py-2 bg-blue-600 text-white rounded">
-            Download
-          </button>
+      <header className="max-w-5xl mx-auto bg-white p-5 rounded-2xl shadow-lg flex justify-between items-center mb-8 border border-slate-300">
+        <h1 className="text-2xl font-black tracking-tighter text-blue-600">A4 COMPOSER <span className="text-slate-400 font-light">PRO</span></h1>
+        <div className="flex gap-3">
+          <button onClick={() => window.location.reload()} className="px-4 py-2 hover:bg-red-50 text-red-600 font-bold rounded-lg transition-colors">Reset</button>
+          <button onClick={() => exportPDF(true)} className="px-6 py-2 bg-slate-800 text-white font-bold rounded-lg hover:bg-slate-700 transition-all">Preview</button>
+          <button onClick={() => exportPDF(false)} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all">Download PDF</button>
         </div>
       </header>
 
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <label className="border-2 border-dashed p-3 rounded cursor-pointer">
-          🖼️ {templateName}
+      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <label className="bg-white border-2 border-dashed border-slate-300 p-6 rounded-2xl cursor-pointer hover:border-blue-400 transition-all flex flex-col items-center gap-2">
+          <span className="text-2xl">🖼️</span>
+          <span className="text-sm font-bold text-slate-500 truncate w-full text-center">{templateName}</span>
           <input hidden type="file" accept="image/*" onChange={e => loadTemplate(e.target.files[0])} />
         </label>
 
-        <label className="border-2 border-dashed p-3 rounded cursor-pointer">
-          📄 {contentName}
-          <input hidden type="file" accept="application/pdf,image/*" onChange={e => loadContent(e.target.files[0])} />
+        <label className="bg-white border-2 border-dashed border-slate-300 p-6 rounded-2xl cursor-pointer hover:border-blue-400 transition-all flex flex-col items-center gap-2">
+          <span className="text-2xl">📄</span>
+          <span className="text-sm font-bold text-slate-500 truncate w-full text-center">{docName}</span>
+          <input hidden type="file" accept=".docx,.txt,.pdf" onChange={e => loadDoc(e.target.files[0])} />
         </label>
-      </div>
 
-      <div className="flex justify-center">
-        <div className="a4 relative bg-white shadow-2xl" style={{ width: A4_WIDTH, height: A4_HEIGHT }}>
-          {template && (
-            <img src={template} className="absolute inset-0 w-full h-full object-cover" alt="" />
-          )}
-
-          <DraggableResizableBox {...box} onUpdate={setBox} hideBorder={exporting}>
-            {contentImage && (
-              <img src={contentImage} className="w-full h-full object-contain" alt="" />
-            )}
-          </DraggableResizableBox>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col gap-4">
+          <div>
+            <div className="flex justify-between text-xs font-black uppercase text-slate-400 mb-2">
+              <span>Font Size</span><span>{fontSize}px</span>
+            </div>
+            <input type="range" min="10" max="45" value={fontSize} onChange={e => setFontSize(+e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
+          </div>
+          <div>
+            <div className="flex justify-between text-xs font-black uppercase text-slate-400 mb-2">
+              <span>Overlay Opacity</span><span>{Math.round(opacity * 100)}%</span>
+            </div>
+            <input type="range" min="0.1" max="1" step="0.05" value={opacity} onChange={e => setOpacity(+e.target.value)} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" />
+          </div>
         </div>
       </div>
+
+      <div className="flex flex-col items-center gap-12 pb-20">
+        {pages.map((html, i) => (
+          <div key={i} className="a4-page relative bg-white shadow-[0_20px_50px_rgba(0,0,0,0.1)] overflow-hidden" style={{ width: A4_WIDTH, height: A4_HEIGHT }}>
+            {template && (
+              <img src={template} className="absolute inset-0 w-full h-full object-cover pointer-events-none" alt="" />
+            )}
+
+            <DraggableResizableBox {...box} onUpdate={setBox} disabled={i > 0} hideBorder={exporting}>
+              <div 
+                style={{ 
+                  fontSize, 
+                  lineHeight: 1.4, 
+                  opacity: opacity,
+                  filter: `contrast(1.1) brightness(1.05)`, // Κάνει το κείμενο πιο έντονο
+                  transition: "opacity 0.2s"
+                }} 
+                dangerouslySetInnerHTML={{ __html: html }} 
+              />
+            </DraggableResizableBox>
+            
+            <div className="absolute bottom-4 right-4 text-[10px] text-slate-300 font-mono">PAGE {i + 1}</div>
+          </div>
+        ))}
+      </div>
+
+      <div ref={measureRef} style={{ position: "absolute", visibility: "hidden", top: 0 }} />
     </div>
   );
 }
