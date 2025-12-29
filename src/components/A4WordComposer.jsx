@@ -75,7 +75,9 @@ export default function A4Composer() {
   const [contrast, setContrast] = useState(1.2);
   const [exporting, setExporting] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [box, setBox] = useState({ x: 40, y: 40, width: 714, height: 1040 });
+  
+  // Επαναφορά αρχικών περιθωρίων (x:40, y:40)
+  const [box, setBox] = useState({ x: 40, y: 40, width: 714, height: 1043 });
 
   const measureRef = useRef(null);
 
@@ -127,7 +129,7 @@ export default function A4Composer() {
 
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale: 3 }); // High Resolution
+          const viewport = page.getViewport({ scale: 2.5 }); 
           const canvas = document.createElement('canvas');
           const context = canvas.getContext('2d');
           canvas.height = viewport.height;
@@ -145,26 +147,25 @@ export default function A4Composer() {
         setDocHtml("PDF_MODE");
         setPages(pdfPages);
         
-        // Auto-fit PDF to full width
-        setBox({ x: 0, y: 0, width: A4_WIDTH, height: A4_HEIGHT });
+        // Επαναφορά στο "Word-like" μέγεθος με περιθώρια
+        setBox({ x: 40, y: 40, width: 714, height: 1043 });
       };
       reader.readAsArrayBuffer(file);
       return;
     }
 
-    if (file.name.toLowerCase().endsWith(".docx")) {
-      const buf = await file.arrayBuffer();
-      const res = await window.mammoth.convertToHtml({ arrayBuffer: buf });
-      setDocHtml(res.value);
-      setBox({ x: 40, y: 40, width: 714, height: 1040 });
-      return;
-    }
-
-    if (file.name.toLowerCase().endsWith(".txt")) {
-      const text = await file.text();
-      setDocHtml(text.split("\n").map(l => `<p>${l}</p>`).join(""));
-      setBox({ x: 40, y: 40, width: 714, height: 1040 });
-      return;
+    if (file.name.toLowerCase().endsWith(".docx") || file.name.toLowerCase().endsWith(".txt")) {
+        const isDocx = file.name.toLowerCase().endsWith(".docx");
+        if (isDocx) {
+            const buf = await file.arrayBuffer();
+            const res = await window.mammoth.convertToHtml({ arrayBuffer: buf });
+            setDocHtml(res.value);
+        } else {
+            const text = await file.text();
+            setDocHtml(text.split("\n").map(l => `<p>${l}</p>`).join(""));
+        }
+        setBox({ x: 40, y: 40, width: 714, height: 1043 });
+        return;
     }
   };
 
@@ -199,7 +200,7 @@ export default function A4Composer() {
       pdf.addImage(canvas, "JPEG", 0, 0, 210, 297);
     }
     setExporting(false);
-    preview ? window.open(URL.createObjectURL(pdf.output("blob"))) : pdf.save("composed_document.pdf");
+    preview ? window.open(URL.createObjectURL(pdf.output("blob"))) : pdf.save("document.pdf");
   };
 
   return (
@@ -215,56 +216,51 @@ export default function A4Composer() {
         </div>
       )}
 
-      <header className="max-w-5xl mx-auto bg-white p-5 rounded-2xl shadow-lg flex justify-between mb-8 border border-slate-300">
-        <h1 className="text-2xl font-black text-blue-600">A4 COMPOSER <span className="text-slate-400 font-light">PRO</span></h1>
+      <header className="max-w-5xl mx-auto bg-white p-5 rounded-2xl shadow-lg flex justify-between mb-8 border border-slate-300 text-slate-700">
+        <h1 className="text-2xl font-black text-blue-600 italic">A4 COMPOSER <span className="text-slate-300 font-light">PRO</span></h1>
         <div className="flex gap-3">
-          <button onClick={() => window.location.reload()} className="px-4 py-2 text-red-600 font-bold hover:bg-red-50 rounded-lg transition-colors">Reset</button>
-          <button onClick={() => exportPDF(true)} className="px-6 py-2 bg-slate-800 text-white font-bold rounded-lg hover:bg-slate-700">Προεπισκόπηση</button>
-          <button onClick={() => exportPDF(false)} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-blue-200 shadow-lg hover:bg-blue-700">Λήψη PDF</button>
+          <button onClick={() => window.location.reload()} className="px-4 py-2 text-red-500 font-bold hover:bg-red-50 rounded-lg">Reset</button>
+          <button onClick={() => exportPDF(true)} className="px-6 py-2 bg-slate-800 text-white font-bold rounded-lg hover:bg-slate-700 transition-all">Preview</button>
+          <button onClick={() => exportPDF(false)} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-lg hover:bg-blue-700 transition-all">Download</button>
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 text-slate-700">
-        <label className="bg-white border-2 border-dashed p-6 rounded-2xl cursor-pointer hover:border-blue-400 flex flex-col items-center gap-2 transition-colors">
+      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <label className="bg-white border-2 border-dashed p-6 rounded-2xl cursor-pointer hover:border-blue-400 flex flex-col items-center gap-2 text-slate-500">
           <span className="text-2xl">🖼️</span>
-          <span className="text-[11px] font-bold uppercase text-slate-400">Φόντο (Template)</span>
-          <span className="text-sm font-medium truncate w-full text-center">{templateName}</span>
+          <span className="text-[10px] font-black uppercase tracking-widest">Background Image</span>
+          <span className="text-xs truncate w-full text-center">{templateName}</span>
           <input hidden type="file" accept="image/*" onChange={e => loadTemplate(e.target.files[0])} />
         </label>
         
-        <label className="bg-white border-2 border-dashed p-6 rounded-2xl cursor-pointer hover:border-blue-400 flex flex-col items-center gap-2 transition-colors">
+        <label className="bg-white border-2 border-dashed p-6 rounded-2xl cursor-pointer hover:border-blue-400 flex flex-col items-center gap-2 text-slate-500">
           <span className="text-2xl">📄</span>
-          <span className="text-[11px] font-bold uppercase text-slate-400">Έγγραφο (PDF/Word)</span>
-          <span className="text-sm font-medium truncate w-full text-center">{docName}</span>
+          <span className="text-[10px] font-black uppercase tracking-widest">Document File</span>
+          <span className="text-xs truncate w-full text-center">{docName}</span>
           <input hidden type="file" accept=".docx,.txt,.pdf" onChange={e => loadDoc(e.target.files[0])} />
         </label>
         
         <div className="bg-white p-5 rounded-2xl border border-slate-200 flex flex-col gap-4 shadow-sm">
           <div style={{ opacity: docHtml === "PDF_MODE" ? 0.3 : 1 }}>
-            <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-1">Μέγεθος Γραμματοσειράς</div>
+            <label className="text-[10px] font-black uppercase text-slate-400 flex justify-between">Font Size <span>{fontSize}px</span></label>
             <input type="range" min="10" max="45" value={fontSize} onChange={e => setFontSize(+e.target.value)} disabled={docHtml === "PDF_MODE"} className="w-full accent-blue-600" />
           </div>
-
           <div>
-            <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-1">Ένταση Γραμμάτων (Contrast)</div>
+            <label className="text-[10px] font-black uppercase text-slate-400 flex justify-between">Contrast <span>{Math.round(contrast*100)}%</span></label>
             <input type="range" min="1" max="3" step="0.1" value={contrast} onChange={e => setContrast(+e.target.value)} className="w-full accent-emerald-600" />
           </div>
-
           <div>
-            <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-1">Διαφάνεια Εγγράφου</div>
+            <label className="text-[10px] font-black uppercase text-slate-400 flex justify-between">Opacity <span>{Math.round(opacity*100)}%</span></label>
             <input type="range" min="0.1" max="1" step="0.05" value={opacity} onChange={e => setOpacity(+e.target.value)} className="w-full accent-blue-600" />
           </div>
-
-          <button onClick={centerBox} className="mt-1 py-2 bg-slate-100 hover:bg-blue-50 text-blue-600 border border-blue-100 rounded-xl text-[10px] font-black transition-all">
-            🎯 ΚΕΝΤΡΑΡΙΣΜΑ ΕΓΓΡΑΦΟΥ
-          </button>
+          <button onClick={centerBox} className="mt-1 py-2 bg-slate-50 hover:bg-blue-50 text-blue-600 border border-blue-100 rounded-xl text-[10px] font-black transition-all">🎯 CENTER DOCUMENT</button>
         </div>
       </div>
 
       <div className="flex flex-col items-center gap-12 pb-20">
         {pages.map((html, i) => (
           <div key={i} className="a4-page relative bg-white shadow-2xl overflow-hidden" style={{ width: A4_WIDTH, height: A4_HEIGHT }}>
-            {template && <img src={template} className="absolute inset-0 w-full h-full object-cover pointer-events-none" alt="" />}
+            {template && <img src={template} className="absolute inset-0 w-full h-full object-cover pointer-events-none z-0" alt="" />}
             
             <DraggableResizableBox {...box} onUpdate={setBox} disabled={i > 0} hideBorder={exporting}>
               <div 
@@ -272,13 +268,13 @@ export default function A4Composer() {
                   fontSize: docHtml === "PDF_MODE" ? "inherit" : fontSize, 
                   lineHeight: 1.4,
                   opacity: opacity,
-                  filter: `contrast(${contrast}) brightness(${1.1 - (contrast - 1) * 0.15})`,
-                  pointerEvents: "none", width: "100%", height: "100%"
+                  filter: `contrast(${contrast}) brightness(${1.1 - (contrast - 1) * 0.1})`,
+                  pointerEvents: "none", width: "100%", height: "100%", zIndex: 1
                 }} 
                 dangerouslySetInnerHTML={{ __html: html }} 
               />
             </DraggableResizableBox>
-            <div className="absolute bottom-4 right-4 text-[10px] text-slate-300 font-mono">PAGE {i + 1}</div>
+            <div className="absolute bottom-4 right-4 text-[10px] text-slate-300 font-mono tracking-widest">PAGE {i + 1}</div>
           </div>
         ))}
       </div>
