@@ -1,341 +1,204 @@
 import React, { useState, useRef, useEffect } from "react";
+import Draggable from "react-draggable";
+import { ResizableBox } from "react-resizable";
+import "react-resizable/css/styles.css";
 
-const A4_WIDTH = 794;
-const A4_HEIGHT = 1123;
-
-/* =========================
-   Draggable & Resizable Box
-========================= */
-function DraggableResizableBox({
-  x, y, width, height, onUpdate, children,
-  disabled, hideBorder
-}) {
-  const [drag, setDrag] = useState(false);
-  const [resize, setResize] = useState(false);
-  const start = useRef({});
-
-  const enabled = !disabled && !hideBorder;
-
-  useEffect(() => {
-    const move = e => {
-      if (!enabled) return;
-      const dx = e.clientX - start.current.mx;
-      const dy = e.clientY - start.current.my;
-
-      if (drag) {
-        onUpdate({
-          ...start.current.box,
-          x: start.current.box.x + dx,
-          y: start.current.box.y + dy
-        });
-      }
-      if (resize) {
-        onUpdate({
-          ...start.current.box,
-          width: Math.max(100, start.current.box.width + dx),
-          height: Math.max(100, start.current.box.height + dy)
-        });
-      }
-    };
-
-    const stop = () => {
-      setDrag(false);
-      setResize(false);
-    };
-
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", stop);
-    return () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", stop);
-    };
-  }, [drag, resize, enabled, onUpdate]);
-
+const DraggableResizableBox = ({ children, x, y, width, height, onUpdate, disabled, hideBorder }) => {
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: x,
-        top: y,
-        width,
-        height,
-        border: hideBorder ? "none" : "2px dashed #2563eb",
-        cursor: enabled ? "move" : "default",
-        zIndex: 10,
-        touchAction: "none"
-      }}
-      onMouseDown={e => {
-        if (!enabled) return;
-        if (e.target.classList.contains("resize")) return;
-        setDrag(true);
-        start.current = {
-          mx: e.clientX,
-          my: e.clientY,
-          box: { x, y, width, height }
-        };
-      }}
+    <Draggable
+      defaultPosition={{ x, y }}
+      onStop={(e, data) => onUpdate({ x: data.x, y: data.y, width, height })}
+      disabled={disabled}
     >
-      {children}
-      {enabled && (
-        <div
-          className="resize"
-          onMouseDown={e => {
-            e.stopPropagation();
-            setResize(true);
-            start.current = {
-              mx: e.clientX,
-              my: e.clientY,
-              box: { x, y, width, height }
-            };
-          }}
-          style={{
-            position: "absolute",
-            right: -6,
-            bottom: -6,
-            width: 14,
-            height: 14,
-            background: "#2563eb",
-            borderRadius: "50%",
-            cursor: "nwse-resize"
-          }}
-        />
-      )}
-    </div>
+      <div style={{ position: "absolute", zIndex: 10 }}>
+        <ResizableBox
+          width={width}
+          height={height}
+          onResizeStop={(e, data) =>
+            onUpdate({ x, y, width: data.size.width, height: data.size.height })
+          }
+          draggableOpts={{ disabled: disabled }}
+          handle={!hideBorder ? <span className="custom-handle" /> : <div />}
+        >
+          <div
+            className={`w-full h-full ${!hideBorder ? "border-2 border-dashed border-blue-400" : ""}`}
+            style={{ padding: "5px", cursor: disabled ? "default" : "move" }}
+          >
+            {children}
+          </div>
+        </ResizableBox>
+      </div>
+    </Draggable>
   );
-}
+};
 
-/* =========================
-        MAIN APP
-========================= */
-export default function A4Composer() {
-  const [template, setTemplate] = useState(null);
-  const [templateName, setTemplateName] = useState("Επιλέξτε φόντο...");
-  const [docName, setDocName] = useState("Επιλέξτε αρχείο (PDF, DOCX, TXT)...");
-  const [docHtml, setDocHtml] = useState("");
+const A4Composer = ({ docHtml, templateImage }) => {
   const [pages, setPages] = useState([]);
   const [fontSize, setFontSize] = useState(16);
-  const [opacity, setOpacity] = useState(1);
+  const [opacity, setOpacity] = useState(0.85);
+  const [contrast, setContrast] = useState(1.3); // Νέο state για ένταση
   const [exporting, setExporting] = useState(false);
-  const [dragging, setDragging] = useState(false);
+  const composerRef = useRef(null);
 
-  const [box, setBox] = useState({
-    x: 50,
-    y: 50,
-    width: 694,
-    height: 1000
-  });
-
-  const measureRef = useRef(null);
-
+  // Αρχικοποίηση πλαισίου
   useEffect(() => {
-    const libs = [
-      "mammoth/1.6.0/mammoth.browser.min.js",
-      "html2canvas/1.4.1/html2canvas.min.js",
-      "jspdf/2.5.1/jspdf.umd.min.js",
-      "pdf.js/3.11.174/pdf.min.js"
-    ];
-    libs.forEach(src => {
-      if (!document.querySelector(`script[src*="${src}"]`)) {
-        const s = document.createElement("script");
-        s.src = "https://cdnjs.cloudflare.com/ajax/libs/" + src;
-        document.body.appendChild(s);
-      }
-    });
-  }, []);
+    if (docHtml) {
+      setPages([{ 
+        id: "p1", 
+        html: docHtml, 
+        box: { x: 50, y: 50, width: 500, height: 400 } 
+      }]);
+    }
+  }, [docHtml]);
 
-  const loadTemplate = file => {
-    if (!file?.type.startsWith("image/")) return;
-    setTemplateName(file.name);
-    const r = new FileReader();
-    r.onload = () => setTemplate(r.result);
-    r.readAsDataURL(file);
-    if (pages.length === 0) setPages([""]);
+  const updateBox = (id, newBox) => {
+    setPages(pages.map(p => p.id === id ? { ...p, box: newBox } : p));
   };
 
-  const loadDoc = async file => {
-    if (!file) return;
-    setDocName(file.name);
-
-    if (file.type === "application/pdf") {
-      const reader = new FileReader();
-      reader.onload = async function() {
-        const typedarray = new Uint8Array(this.result);
-        const pdfjsLib = window['pdfjs-dist/build/pdf'];
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        
-        const pdf = await pdfjsLib.getDocument(typedarray).promise;
-        let pdfPages = [];
-
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale: 2 });
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
-
-          await page.render({ canvasContext: context, viewport: viewport }).promise;
-
-          const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-          const data = imageData.data;
-          for (let j = 0; j < data.length; j += 4) {
-            if (data[j] > 235 && data[j+1] > 235 && data[j+2] > 235) {
-              data[j + 3] = 0; 
-            }
-          }
-          context.putImageData(imageData, 0, 0);
-          
-          pdfPages.push(`<img src="${canvas.toDataURL()}" draggable="false" style="width:100%; height:auto; display:block; user-select:none; pointer-events:none;" />`);
-        }
-        setPages(pdfPages);
-        setDocHtml("PDF_MODE"); 
-      };
-      reader.readAsArrayBuffer(file);
-      return;
-    }
-
-    if (file.name.toLowerCase().endsWith(".txt")) {
-      const text = await file.text();
-      const html = text.split("\n").map(line => `<p>${line}</p>`).join("");
-      setDocHtml(html);
-      return;
-    }
-
-    if (file.name.toLowerCase().endsWith(".docx")) {
-      const buf = await file.arrayBuffer();
-      const options = {
-        convertImage: window.mammoth.images.imgElement(img => 
-          img.readAsDataURL().then(src => ({ src }))
-        )
-      };
-      const res = await window.mammoth.convertToHtml({ arrayBuffer: buf }, options);
-      setDocHtml(res.value);
-      return;
-    }
-  };
-
-  useEffect(() => {
-    if (!docHtml || docHtml === "PDF_MODE" || !measureRef.current) return;
-
-    const container = measureRef.current;
-    container.style.width = box.width + "px";
-    container.style.fontSize = fontSize + "px";
-    container.innerHTML = docHtml;
-
-    const nodes = Array.from(container.children);
-    let current = [];
-    let result = [];
-    container.innerHTML = "";
-
-    for (let n of nodes) {
-      container.appendChild(n.cloneNode(true));
-      if (container.scrollHeight > box.height) {
-        container.innerHTML = "";
-        result.push(current.join(""));
-        current = [n.outerHTML];
-        container.innerHTML = n.outerHTML;
-      } else {
-        current.push(n.outerHTML);
-      }
-    }
-    if (current.length) result.push(current.join(""));
-    setPages(result);
-  }, [docHtml, fontSize, box.width, box.height]);
-
-  const exportPDF = async preview => {
+  const handlePrint = () => {
     setExporting(true);
-    await new Promise(r => setTimeout(r, 400));
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF("p", "mm", "a4");
-    const els = document.querySelectorAll(".a4-page");
-    for (let i = 0; i < els.length; i++) {
-      const canvas = await window.html2canvas(els[i], { scale: 2, useCORS: true });
-      if (i) pdf.addPage();
-      pdf.addImage(canvas, "JPEG", 0, 0, 210, 297, undefined, 'FAST');
-    }
-    setExporting(false);
-    preview ? window.open(URL.createObjectURL(pdf.output("blob"))) : pdf.save("document.pdf");
+    setTimeout(() => {
+      window.print();
+      setExporting(false);
+    }, 500);
   };
 
   return (
-    <div className="p-6 bg-slate-200 min-h-screen font-sans text-slate-800 relative"
-      onDragEnter={(e) => {
-        e.preventDefault();
-        if (e.dataTransfer.types.includes("Files")) setDragging(true);
-      }}
-      onDragOver={(e) => e.preventDefault()}
-      onDragLeave={(e) => {
-        if (e.relatedTarget === null) setDragging(false);
-      }}
-      onDrop={e => {
-        e.preventDefault();
-        setDragging(false);
-        const f = e.dataTransfer.files[0];
-        if (!f) return;
-        if (f.type.startsWith("image/")) loadTemplate(f);
-        else loadDoc(f);
-      }}
-    >
-      {dragging && (
-        <div className="fixed inset-0 bg-blue-600/30 border-8 border-dashed border-blue-600 flex items-center justify-center z-[100] backdrop-blur-sm pointer-events-none">
-          <div className="bg-white p-8 rounded-2xl shadow-2xl text-2xl font-black">Ρίξτε το αρχείο εδώ</div>
-        </div>
-      )}
-
-      <header className="max-w-5xl mx-auto bg-white p-5 rounded-2xl shadow-lg flex justify-between items-center mb-8 border border-slate-300">
-        <h1 className="text-2xl font-black text-blue-600">A4 COMPOSER PRO</h1>
-        <div className="flex gap-3">
-          <button onClick={() => window.location.reload()} className="px-4 py-2 text-red-600 font-bold">Reset</button>
-          <button onClick={() => exportPDF(true)} className="px-6 py-2 bg-slate-800 text-white font-bold rounded-lg">Preview</button>
-          <button onClick={() => exportPDF(false)} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-lg">Download PDF</button>
-        </div>
-      </header>
-
-      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <label className="bg-white border-2 border-dashed border-slate-300 p-6 rounded-2xl cursor-pointer hover:border-blue-400 flex flex-col items-center gap-2 transition-all">
-          <span className="text-2xl">🖼️</span>
-          <span className="text-sm font-bold text-slate-500 truncate w-full text-center">{templateName}</span>
-          <input hidden type="file" accept="image/*" onChange={e => loadTemplate(e.target.files[0])} />
-        </label>
-        <label className="bg-white border-2 border-dashed border-slate-300 p-6 rounded-2xl cursor-pointer hover:border-blue-400 flex flex-col items-center gap-2 transition-all">
-          <span className="text-2xl">📄</span>
-          <span className="text-sm font-bold text-slate-500 truncate w-full text-center">{docName}</span>
-          <input hidden type="file" accept=".docx,.txt,.pdf" onChange={e => loadDoc(e.target.files[0])} />
-        </label>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col gap-4">
-          <div>
-            <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-1">Font Size / PDF Zoom</div>
-            <input type="range" min="10" max="45" value={fontSize} onChange={e => setFontSize(+e.target.value)} className="w-full accent-blue-600" />
+    <div className="flex flex-col lg:flex-row gap-8 p-4 bg-slate-100 min-h-screen font-sans">
+      
+      {/* SIDEBAR CONTROLS */}
+      <div className="lg:w-80 space-y-6 no-print">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col gap-5">
+          <h3 className="text-sm font-bold text-slate-800 border-b pb-2">Ρυθμίσεις Εγγράφου</h3>
+          
+          {/* FONT SIZE - Απενεργοποιημένο αν είναι PDF */}
+          <div style={{ opacity: docHtml === "PDF_MODE" ? 0.3 : 1 }}>
+            <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-2">
+              <span>Μέγεθος Γραμματοσειράς</span>
+              <span>{fontSize}px</span>
+            </div>
+            <input 
+              type="range" min="10" max="45" value={fontSize} 
+              onChange={e => setFontSize(+e.target.value)} 
+              disabled={docHtml === "PDF_MODE"}
+              className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" 
+            />
           </div>
+
+          {/* CONTRAST - Για πιο έντονα γράμματα */}
           <div>
-            <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-1">Overlay Opacity</div>
-            <input type="range" min="0.1" max="1" step="0.05" value={opacity} onChange={e => setOpacity(+e.target.value)} className="w-full accent-blue-600" />
+            <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-2">
+              <span>Ένταση Γραμμάτων (Contrast)</span>
+              <span>{Math.round(contrast * 100)}%</span>
+            </div>
+            <input 
+              type="range" min="1" max="3" step="0.1" value={contrast} 
+              onChange={e => setContrast(+e.target.value)} 
+              className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600" 
+            />
           </div>
+
+          {/* OPACITY */}
+          <div>
+            <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-2">
+              <span>Διαφάνεια (Opacity)</span>
+              <span>{Math.round(opacity * 100)}%</span>
+            </div>
+            <input 
+              type="range" min="0.1" max="1" step="0.05" value={opacity} 
+              onChange={e => setOpacity(+e.target.value)} 
+              className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" 
+            />
+          </div>
+
+          <button 
+            onClick={handlePrint}
+            className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm hover:bg-black transition-colors shadow-lg"
+          >
+            Εξαγωγή σε PDF / Εκτύπωση
+          </button>
+        </div>
+
+        <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl">
+          <p className="text-[11px] text-blue-700 leading-relaxed">
+            <strong>Tip:</strong> Στο PDF το μέγεθος αλλάζει σέρνοντας την κάτω δεξιά γωνία του μπλε πλαισίου.
+          </p>
         </div>
       </div>
 
-      <div className="flex flex-col items-center gap-12 pb-20">
-        {pages.map((html, i) => (
-          <div key={i} className="a4-page relative bg-white shadow-2xl overflow-hidden" style={{ width: A4_WIDTH, height: A4_HEIGHT }}>
-            {template && <img src={template} className="absolute inset-0 w-full h-full object-cover pointer-events-none" alt="" />}
-            <DraggableResizableBox {...box} onUpdate={setBox} disabled={i > 0} hideBorder={exporting}>
+      {/* A4 CANVAS */}
+      <div className="flex-1 flex justify-center overflow-auto py-4 px-2">
+        <div 
+          ref={composerRef}
+          className="bg-white shadow-2xl relative overflow-hidden"
+          style={{ 
+            width: "210mm", 
+            height: "297mm", 
+            minWidth: "210mm",
+            printColorAdjust: "exact"
+          }}
+        >
+          {/* BACKGROUND TEMPLATE */}
+          {templateImage && (
+            <img 
+              src={templateImage} 
+              alt="Template" 
+              className="absolute inset-0 w-full h-full object-cover z-0"
+            />
+          )}
+
+          {/* CONTENT OVERLAY */}
+          {pages.map((p, i) => (
+            <DraggableResizableBox 
+              key={p.id}
+              {...p.box}
+              onUpdate={(newBox) => updateBox(p.id, newBox)}
+              disabled={exporting}
+              hideBorder={exporting}
+            >
               <div 
                 style={{ 
-                  fontSize, 
+                  fontSize: docHtml === "PDF_MODE" ? "inherit" : `${fontSize}px`, 
                   lineHeight: 1.4, 
                   opacity: opacity,
-                  filter: `contrast(1.1) brightness(1.02)`,
-                  transition: "opacity 0.2s",
-                  pointerEvents: "none" // Επιτρέπει στο κλικ να περνάει στο DraggableBox
+                  // Εφαρμογή φίλτρων για ένταση
+                  filter: `contrast(${contrast}) brightness(${1 + (contrast - 1) * 0.1})`,
+                  transition: "filter 0.2s, opacity 0.2s",
+                  pointerEvents: "none",
+                  width: "100%",
+                  height: "100%"
                 }} 
-                dangerouslySetInnerHTML={{ __html: html }} 
+                className="overflow-hidden"
+                dangerouslySetInnerHTML={{ __html: p.html }} 
               />
             </DraggableResizableBox>
-            <div className="absolute bottom-4 right-4 text-[10px] text-slate-300">PAGE {i + 1}</div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-      <div ref={measureRef} style={{ position: "absolute", visibility: "hidden", top: 0, left: 0 }} />
+
+      {/* STYLES ΓΙΑ ΤΟ RESIZE HANDLE ΚΑΙ PRINT */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        .custom-handle {
+          position: absolute;
+          width: 12px;
+          height: 12px;
+          background: #3b82f6;
+          right: -6px;
+          bottom: -6px;
+          cursor: se-resize;
+          border-radius: 50%;
+          border: 2px solid white;
+          z-index: 20;
+        }
+        @media print {
+          @page { size: A4; margin: 0; }
+          body { background: white; }
+          .no-print { display: none !important; }
+          .bg-white { shadow: none !important; }
+        }
+      `}} />
     </div>
   );
-}
+};
+
+export default A4Composer;
