@@ -24,7 +24,11 @@ function DraggableResizableBox({
         onUpdate({ ...start.current.box, x: start.current.box.x + dx, y: start.current.box.y + dy });
       }
       if (resize) {
-        onUpdate({ ...start.current.box, width: Math.max(100, start.current.box.width + dx), height: Math.max(100, start.current.box.height + dy) });
+        onUpdate({ 
+          ...start.current.box, 
+          width: Math.max(50, start.current.box.width + dx), 
+          height: Math.max(50, start.current.box.height + dy) 
+        });
       }
     };
     const stop = () => { setDrag(false); setResize(false); };
@@ -71,12 +75,17 @@ export default function A4Composer() {
   const [contrast, setContrast] = useState(1.2);
   const [exporting, setExporting] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [box, setBox] = useState({ x: 40, y: 40, width: 714, height: 1040 });
 
-  const [box, setBox] = useState({ x: 50, y: 50, width: 694, height: 1000 });
   const measureRef = useRef(null);
 
   useEffect(() => {
-    const libs = ["mammoth/1.6.0/mammoth.browser.min.js", "html2canvas/1.4.1/html2canvas.min.js", "jspdf/2.5.1/jspdf.umd.min.js", "pdf.js/3.11.174/pdf.min.js"];
+    const libs = [
+      "mammoth/1.6.0/mammoth.browser.min.js", 
+      "html2canvas/1.4.1/html2canvas.min.js", 
+      "jspdf/2.5.1/jspdf.umd.min.js", 
+      "pdf.js/3.11.174/pdf.min.js"
+    ];
     libs.forEach(src => {
       if (!document.querySelector(`script[src*="${src}"]`)) {
         const s = document.createElement("script");
@@ -85,6 +94,14 @@ export default function A4Composer() {
       }
     });
   }, []);
+
+  const centerBox = () => {
+    setBox({
+      ...box,
+      x: (A4_WIDTH - box.width) / 2,
+      y: (A4_HEIGHT - box.height) / 2
+    });
+  };
 
   const loadTemplate = file => {
     if (!file?.type.startsWith("image/")) return;
@@ -110,7 +127,7 @@ export default function A4Composer() {
 
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale: 2 });
+          const viewport = page.getViewport({ scale: 3 }); // High Resolution
           const canvas = document.createElement('canvas');
           const context = canvas.getContext('2d');
           canvas.height = viewport.height;
@@ -123,10 +140,13 @@ export default function A4Composer() {
             if (data[j] > 235 && data[j+1] > 235 && data[j+2] > 235) data[j + 3] = 0;
           }
           context.putImageData(imageData, 0, 0);
-          pdfPages.push(`<img src="${canvas.toDataURL()}" draggable="false" style="width:100%; pointer-events:none;" />`);
+          pdfPages.push(`<img src="${canvas.toDataURL()}" draggable="false" style="width:100%; height:auto; display:block; pointer-events:none;" />`);
         }
-        setDocHtml("PDF_MODE"); // ΚΡΙΣΙΜΟ: Ενεργοποιεί τα sliders
+        setDocHtml("PDF_MODE");
         setPages(pdfPages);
+        
+        // Auto-fit PDF to full width
+        setBox({ x: 0, y: 0, width: A4_WIDTH, height: A4_HEIGHT });
       };
       reader.readAsArrayBuffer(file);
       return;
@@ -136,12 +156,14 @@ export default function A4Composer() {
       const buf = await file.arrayBuffer();
       const res = await window.mammoth.convertToHtml({ arrayBuffer: buf });
       setDocHtml(res.value);
+      setBox({ x: 40, y: 40, width: 714, height: 1040 });
       return;
     }
 
     if (file.name.toLowerCase().endsWith(".txt")) {
       const text = await file.text();
       setDocHtml(text.split("\n").map(l => `<p>${l}</p>`).join(""));
+      setBox({ x: 40, y: 40, width: 714, height: 1040 });
       return;
     }
   };
@@ -168,7 +190,7 @@ export default function A4Composer() {
 
   const exportPDF = async preview => {
     setExporting(true);
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 500));
     const pdf = new window.jspdf.jsPDF("p", "mm", "a4");
     const els = document.querySelectorAll(".a4-page");
     for (let i = 0; i < els.length; i++) {
@@ -177,7 +199,7 @@ export default function A4Composer() {
       pdf.addImage(canvas, "JPEG", 0, 0, 210, 297);
     }
     setExporting(false);
-    preview ? window.open(URL.createObjectURL(pdf.output("blob"))) : pdf.save("document.pdf");
+    preview ? window.open(URL.createObjectURL(pdf.output("blob"))) : pdf.save("composed_document.pdf");
   };
 
   return (
@@ -189,47 +211,53 @@ export default function A4Composer() {
     >
       {dragging && (
         <div className="fixed inset-0 bg-blue-600/30 border-8 border-dashed border-blue-600 flex items-center justify-center z-[100] pointer-events-none backdrop-blur-sm">
-          <div className="bg-white p-8 rounded-2xl font-black shadow-2xl">Ρίξτε το αρχείο εδώ</div>
+          <div className="bg-white p-8 rounded-2xl font-black shadow-2xl text-xl">Αφήστε το αρχείο εδώ</div>
         </div>
       )}
 
-      <header className="max-w-5xl mx-auto bg-white p-5 rounded-2xl shadow flex justify-between mb-8 border border-slate-300">
-        <h1 className="text-2xl font-black text-blue-600">A4 COMPOSER PRO</h1>
+      <header className="max-w-5xl mx-auto bg-white p-5 rounded-2xl shadow-lg flex justify-between mb-8 border border-slate-300">
+        <h1 className="text-2xl font-black text-blue-600">A4 COMPOSER <span className="text-slate-400 font-light">PRO</span></h1>
         <div className="flex gap-3">
-          <button onClick={() => window.location.reload()} className="px-4 py-2 text-red-600 font-bold">Reset</button>
-          <button onClick={() => exportPDF(true)} className="px-6 py-2 bg-slate-800 text-white font-bold rounded-lg">Preview</button>
-          <button onClick={() => exportPDF(false)} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg">Download</button>
+          <button onClick={() => window.location.reload()} className="px-4 py-2 text-red-600 font-bold hover:bg-red-50 rounded-lg transition-colors">Reset</button>
+          <button onClick={() => exportPDF(true)} className="px-6 py-2 bg-slate-800 text-white font-bold rounded-lg hover:bg-slate-700">Προεπισκόπηση</button>
+          <button onClick={() => exportPDF(false)} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-blue-200 shadow-lg hover:bg-blue-700">Λήψη PDF</button>
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <label className="bg-white border-2 border-dashed p-6 rounded-2xl cursor-pointer hover:border-blue-400 flex flex-col items-center gap-2">
-          <span>🖼️ Φόντο: {templateName}</span>
+      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 text-slate-700">
+        <label className="bg-white border-2 border-dashed p-6 rounded-2xl cursor-pointer hover:border-blue-400 flex flex-col items-center gap-2 transition-colors">
+          <span className="text-2xl">🖼️</span>
+          <span className="text-[11px] font-bold uppercase text-slate-400">Φόντο (Template)</span>
+          <span className="text-sm font-medium truncate w-full text-center">{templateName}</span>
           <input hidden type="file" accept="image/*" onChange={e => loadTemplate(e.target.files[0])} />
         </label>
-        <label className="bg-white border-2 border-dashed p-6 rounded-2xl cursor-pointer hover:border-blue-400 flex flex-col items-center gap-2">
-          <span>📄 Αρχείο: {docName}</span>
+        
+        <label className="bg-white border-2 border-dashed p-6 rounded-2xl cursor-pointer hover:border-blue-400 flex flex-col items-center gap-2 transition-colors">
+          <span className="text-2xl">📄</span>
+          <span className="text-[11px] font-bold uppercase text-slate-400">Έγγραφο (PDF/Word)</span>
+          <span className="text-sm font-medium truncate w-full text-center">{docName}</span>
           <input hidden type="file" accept=".docx,.txt,.pdf" onChange={e => loadDoc(e.target.files[0])} />
         </label>
         
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 flex flex-col gap-4 shadow-sm">
-          {/* FONT SIZE - Μόνο για Word */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 flex flex-col gap-4 shadow-sm">
           <div style={{ opacity: docHtml === "PDF_MODE" ? 0.3 : 1 }}>
-            <label className="text-[10px] font-black uppercase text-slate-400">Μέγεθος Γραμμάτων</label>
+            <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-1">Μέγεθος Γραμματοσειράς</div>
             <input type="range" min="10" max="45" value={fontSize} onChange={e => setFontSize(+e.target.value)} disabled={docHtml === "PDF_MODE"} className="w-full accent-blue-600" />
           </div>
 
-          {/* CONTRAST - Για PDF & Word */}
           <div>
-            <label className="text-[10px] font-black uppercase text-slate-400">Ένταση Γραμμάτων (Contrast)</label>
+            <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-1">Ένταση Γραμμάτων (Contrast)</div>
             <input type="range" min="1" max="3" step="0.1" value={contrast} onChange={e => setContrast(+e.target.value)} className="w-full accent-emerald-600" />
           </div>
 
-          {/* OPACITY - Για PDF & Word */}
           <div>
-            <label className="text-[10px] font-black uppercase text-slate-400">Διαφάνεια (Opacity)</label>
+            <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 mb-1">Διαφάνεια Εγγράφου</div>
             <input type="range" min="0.1" max="1" step="0.05" value={opacity} onChange={e => setOpacity(+e.target.value)} className="w-full accent-blue-600" />
           </div>
+
+          <button onClick={centerBox} className="mt-1 py-2 bg-slate-100 hover:bg-blue-50 text-blue-600 border border-blue-100 rounded-xl text-[10px] font-black transition-all">
+            🎯 ΚΕΝΤΡΑΡΙΣΜΑ ΕΓΓΡΑΦΟΥ
+          </button>
         </div>
       </div>
 
@@ -242,14 +270,15 @@ export default function A4Composer() {
               <div 
                 style={{ 
                   fontSize: docHtml === "PDF_MODE" ? "inherit" : fontSize, 
+                  lineHeight: 1.4,
                   opacity: opacity,
-                  filter: `contrast(${contrast}) brightness(${1.1 - (contrast - 1) * 0.2})`,
+                  filter: `contrast(${contrast}) brightness(${1.1 - (contrast - 1) * 0.15})`,
                   pointerEvents: "none", width: "100%", height: "100%"
                 }} 
                 dangerouslySetInnerHTML={{ __html: html }} 
               />
             </DraggableResizableBox>
-            <div className="absolute bottom-4 right-4 text-[10px] text-slate-300">ΣΕΛΙΔΑ {i + 1}</div>
+            <div className="absolute bottom-4 right-4 text-[10px] text-slate-300 font-mono">PAGE {i + 1}</div>
           </div>
         ))}
       </div>
